@@ -1,4 +1,4 @@
-# taildrop-dolphin
+# dolphin-tailnet-send
 
 Adds two entries to Dolphin's right-click **Share** menu on KDE Plasma 6, for
 sending files to your other Tailscale devices:
@@ -52,7 +52,7 @@ Requirements and behaviour:
   (`StrictHostKeyChecking=accept-new`), because the tailnet already
   authenticates the peer. Changed host keys are still refused.
 - **Files with the same name in the destination are overwritten.**
-- To use a different destination, set `TAILDROP_SSH_DIR` in your session
+- To use a different destination, set `TAILNET_SEND_SSH_DIR` in your session
   environment. Relative paths start from the remote home directory.
 
 ## Flake outputs
@@ -61,11 +61,11 @@ Requirements and behaviour:
 | --- | --- |
 | `packages.<system>.taildrop-send` | The `taildrop-send` script |
 | `packages.<system>.ssh-send` | The `ssh-send` script |
-| `packages.<system>.taildrop-servicemenu` | `share/kio/servicemenus/taildrop.desktop` (both entries) |
+| `packages.<system>.tailnet-send-servicemenu` | `share/kio/servicemenus/dolphin-tailnet-send.desktop` (both entries) |
 | `packages.<system>.default` | All of the above |
-| `overlays.default` | `taildrop-send`, `ssh-send`, `taildrop-servicemenu`, `taildrop-dolphin` |
-| `nixosModules.default` | `programs.taildrop-dolphin` |
-| `homeManagerModules.default` | `programs.taildrop-dolphin` |
+| `overlays.default` | `taildrop-send`, `ssh-send`, `tailnet-send-servicemenu`, `dolphin-tailnet-send` |
+| `nixosModules.default` | `programs.dolphin-tailnet-send` |
+| `homeManagerModules.default` | `programs.dolphin-tailnet-send` |
 
 Supported systems: `x86_64-linux` and `aarch64-linux`.
 
@@ -75,20 +75,20 @@ Supported systems: `x86_64-linux` and `aarch64-linux`.
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    taildrop-dolphin = {
-      url = "github:ollekv/taildrop-dolphin";
+    dolphin-tailnet-send = {
+      url = "github:ollekv/dolphin-tailnet-send";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { nixpkgs, taildrop-dolphin, ... }: {
+  outputs = { nixpkgs, dolphin-tailnet-send, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        taildrop-dolphin.nixosModules.default
+        dolphin-tailnet-send.nixosModules.default
         {
           services.tailscale.enable = true;
-          programs.taildrop-dolphin = {
+          programs.dolphin-tailnet-send = {
             enable = true;
             # Lets this user run `tailscale file cp` without sudo.
             operator = "alice";
@@ -102,11 +102,11 @@ Supported systems: `x86_64-linux` and `aarch64-linux`.
 
 Options:
 
-- `programs.taildrop-dolphin.enable`: installs both scripts and the servicemenu
-  into `environment.systemPackages`.
-- `programs.taildrop-dolphin.package`: the package to install. Defaults to this
-  flake's package, built with your system's `pkgs`.
-- `programs.taildrop-dolphin.operator` (string or `null`): when set, appends
+- `programs.dolphin-tailnet-send.enable`: installs both scripts and the
+  servicemenu into `environment.systemPackages`.
+- `programs.dolphin-tailnet-send.package`: the package to install. Defaults
+  to this flake's package, built with your system's `pkgs`.
+- `programs.dolphin-tailnet-send.operator` (string or `null`): when set, appends
   `--operator=<user>` to `services.tailscale.extraSetFlags`. This option
   requires `services.tailscale.enable = true`, and evaluation fails with an
   assertion if Tailscale is not enabled.
@@ -115,11 +115,11 @@ Options:
 
 ```nix
 {
-  inputs.taildrop-dolphin.url = "github:ollekv/taildrop-dolphin";
+  inputs.dolphin-tailnet-send.url = "github:ollekv/dolphin-tailnet-send";
 
   # In your Home Manager configuration:
-  imports = [ inputs.taildrop-dolphin.homeManagerModules.default ];
-  programs.taildrop-dolphin.enable = true;
+  imports = [ inputs.dolphin-tailnet-send.homeManagerModules.default ];
+  programs.dolphin-tailnet-send.enable = true;
 }
 ```
 
@@ -129,11 +129,11 @@ This adds the package to `home.packages`. Dolphin finds the servicemenu through
 **Home Manager cannot set the operator.** The Tailscale operator is set in the
 system daemon, so you still need one of these:
 
-- the NixOS module's `programs.taildrop-dolphin.operator`, or
+- the NixOS module's `programs.dolphin-tailnet-send.operator`, or
 - `services.tailscale.extraSetFlags = [ "--operator=alice" ];`, or
 - running `sudo tailscale set --operator=$USER` once.
 
-If you use the overlay, `pkgs.taildrop-dolphin` is the combined package.
+If you use the overlay, `pkgs.dolphin-tailnet-send` is the combined package.
 
 ## Receiving Taildrop files
 
@@ -155,11 +155,11 @@ Taildrop works differently:
 
 - **The menu entries don't appear.** Restart Dolphin. If they're still missing,
   run `kbuildsycoca6` and log out and back in, so a new `XDG_DATA_DIRS` is
-  picked up. Check that `taildrop.desktop` exists in a
+  picked up. Check that `dolphin-tailnet-send.desktop` exists in a
   `share/kio/servicemenus` directory listed in `XDG_DATA_DIRS`. On NixOS that
   directory is `/run/current-system/sw/share/kio/servicemenus`.
 - **"Could not list Taildrop targets: … access denied".** Your user is not the
-  Tailscale operator. Set `programs.taildrop-dolphin.operator`, or run
+  Tailscale operator. Set `programs.dolphin-tailnet-send.operator`, or run
   `sudo tailscale set --operator=$USER`. Then check the result with
   `tailscale file cp --targets`.
 - **"No Taildrop targets are online".** Run `tailscale file cp --targets`

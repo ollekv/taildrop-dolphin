@@ -5,7 +5,7 @@
 
 title="Send via SSH"
 icon=network-server
-dir=${TAILDROP_SSH_DIR:-Downloads}
+dir=${TAILNET_SEND_SSH_DIR:-Downloads}
 
 if [ "$#" -eq 0 ]; then
   fail "No files were selected."

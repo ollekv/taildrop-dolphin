@@ -19,7 +19,7 @@ if ! targets=$(tailscale file cp --targets 2>&1); then
 $targets
 
 If this is a permission error, set your user as the Tailscale operator
-(programs.taildrop-dolphin.operator, or: sudo tailscale set --operator=\$USER)."
+(programs.dolphin-tailnet-send.operator, or: sudo tailscale set --operator=\$USER)."
 fi
 
 # Unknown-status peers stay in the menu, with the status in the label.

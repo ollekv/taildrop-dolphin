@@ -1,5 +1,5 @@
 {
-  description = "Send files from Dolphin (KDE Plasma 6) to Tailscale devices with Taildrop";
+  description = "Send files from Dolphin (KDE Plasma 6) to Tailscale devices via Taildrop or SSH";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -66,9 +66,9 @@
 
           # KIO only runs servicemenus from user-writable locations when the
           # file is executable, so mark it executable to be safe everywhere.
-          taildrop-servicemenu = pkgs.writeTextFile {
-            name = "taildrop-servicemenu";
-            destination = "/share/kio/servicemenus/taildrop.desktop";
+          tailnet-send-servicemenu = pkgs.writeTextFile {
+            name = "tailnet-send-servicemenu";
+            destination = "/share/kio/servicemenus/dolphin-tailnet-send.desktop";
             executable = true;
             text = ''
               [Desktop Entry]
@@ -91,13 +91,13 @@
           };
         in
         {
-          inherit taildrop-send ssh-send taildrop-servicemenu;
+          inherit taildrop-send ssh-send tailnet-send-servicemenu;
           default = pkgs.symlinkJoin {
-            name = "taildrop-dolphin";
+            name = "dolphin-tailnet-send";
             paths = [
               taildrop-send
               ssh-send
-              taildrop-servicemenu
+              tailnet-send-servicemenu
             ];
             meta.mainProgram = "taildrop-send";
           };
@@ -110,8 +110,8 @@
         package = lib.mkOption {
           type = lib.types.package;
           default = (mkPackages pkgs).default;
-          defaultText = lib.literalExpression "taildrop-dolphin.packages.\${system}.default";
-          description = "The taildrop-dolphin package to install.";
+          defaultText = lib.literalExpression "dolphin-tailnet-send.packages.\${system}.default";
+          description = "The dolphin-tailnet-send package to install.";
         };
       };
     in
@@ -124,8 +124,8 @@
           packages = mkPackages final;
         in
         {
-          inherit (packages) taildrop-send ssh-send taildrop-servicemenu;
-          taildrop-dolphin = packages.default;
+          inherit (packages) taildrop-send ssh-send tailnet-send-servicemenu;
+          dolphin-tailnet-send = packages.default;
         };
 
       nixosModules.default =
@@ -136,10 +136,10 @@
           ...
         }:
         let
-          cfg = config.programs.taildrop-dolphin;
+          cfg = config.programs.dolphin-tailnet-send;
         in
         {
-          options.programs.taildrop-dolphin = commonOptions pkgs // {
+          options.programs.dolphin-tailnet-send = commonOptions pkgs // {
             operator = lib.mkOption {
               type = lib.types.nullOr lib.types.str;
               default = null;
@@ -162,7 +162,7 @@
                 assertions = [
                   {
                     assertion = config.services.tailscale.enable;
-                    message = "programs.taildrop-dolphin.operator requires services.tailscale.enable = true.";
+                    message = "programs.dolphin-tailnet-send.operator requires services.tailscale.enable = true.";
                   }
                 ];
                 services.tailscale.extraSetFlags = [ "--operator=${cfg.operator}" ];
@@ -173,7 +173,7 @@
 
       # The servicemenu is picked up through XDG_DATA_DIRS from the Home
       # Manager profile. Making the user a Tailscale operator must still be
-      # done at the NixOS level (programs.taildrop-dolphin.operator).
+      # done at the NixOS level (programs.dolphin-tailnet-send.operator).
       homeManagerModules.default =
         {
           config,
@@ -182,10 +182,10 @@
           ...
         }:
         let
-          cfg = config.programs.taildrop-dolphin;
+          cfg = config.programs.dolphin-tailnet-send;
         in
         {
-          options.programs.taildrop-dolphin = commonOptions pkgs;
+          options.programs.dolphin-tailnet-send = commonOptions pkgs;
 
           config = lib.mkIf cfg.enable {
             home.packages = [ cfg.package ];
@@ -202,24 +202,24 @@
           packages = self.packages.${pkgs.stdenv.hostPlatform.system};
         in
         {
-          inherit (packages) taildrop-send ssh-send taildrop-servicemenu;
+          inherit (packages) taildrop-send ssh-send tailnet-send-servicemenu;
 
           nixos-module = pkgs.testers.runNixOSTest {
-            name = "taildrop-dolphin";
+            name = "dolphin-tailnet-send";
             nodes.machine = {
               imports = [ self.nixosModules.default ];
               services.tailscale.enable = true;
               users.users.alice.isNormalUser = true;
-              programs.taildrop-dolphin = {
+              programs.dolphin-tailnet-send = {
                 enable = true;
                 operator = "alice";
               };
             };
             testScript = ''
               machine.wait_for_unit("multi-user.target")
-              machine.succeed("test -f /run/current-system/sw/share/kio/servicemenus/taildrop.desktop")
-              machine.succeed("grep -q 'Exec=/nix/store/.*/bin/taildrop-send %F' /run/current-system/sw/share/kio/servicemenus/taildrop.desktop")
-              machine.succeed("grep -q 'Exec=/nix/store/.*/bin/ssh-send %F' /run/current-system/sw/share/kio/servicemenus/taildrop.desktop")
+              machine.succeed("test -f /run/current-system/sw/share/kio/servicemenus/dolphin-tailnet-send.desktop")
+              machine.succeed("grep -q 'Exec=/nix/store/.*/bin/taildrop-send %F' /run/current-system/sw/share/kio/servicemenus/dolphin-tailnet-send.desktop")
+              machine.succeed("grep -q 'Exec=/nix/store/.*/bin/ssh-send %F' /run/current-system/sw/share/kio/servicemenus/dolphin-tailnet-send.desktop")
               machine.succeed("su - alice -c 'command -v taildrop-send'")
               machine.succeed("su - alice -c 'command -v ssh-send'")
               machine.wait_until_succeeds("tailscale debug prefs | grep -q '\"OperatorUser\": \"alice\"'")
