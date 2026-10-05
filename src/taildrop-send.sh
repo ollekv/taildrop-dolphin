@@ -36,6 +36,13 @@ what=$(describe_selection "$@")
 pick_target "No Taildrop targets are online." "Send $what to:"
 notify_progress "Sending $what to $target_name…"
 
+# Listing targets works without the operator setting, but sending doesn't.
+operator_hint() {
+  if printf '%s\n' "$1" | grep -qi 'access denied'; then
+    echo "Make your user the Tailscale operator: sudo tailscale set --operator=\$USER"
+  fi
+}
+
 # Progress output would only end up in the captured error messages.
 cp_opts=(--update-interval=0)
 
@@ -61,7 +68,7 @@ for path in "$@"; do
           tailscale file cp "${cp_opts[@]}" --name "$name.zip" - "$target:"
       } 2>&1
     ); then
-      send_failed "$out"
+      send_failed "$out" "$(operator_hint "$out")"
     fi
   else
     files+=("$path")
@@ -70,7 +77,7 @@ done
 
 if [ "${#files[@]}" -gt 0 ] &&
   ! out=$(tailscale file cp "${cp_opts[@]}" "${files[@]}" "$target:" 2>&1); then
-  send_failed "$out"
+  send_failed "$out" "$(operator_hint "$out")"
 fi
 
 notify_sent "Sent $what to $target_name"
