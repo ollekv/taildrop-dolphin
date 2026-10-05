@@ -1,10 +1,17 @@
 # taildrop-dolphin
 
-Adds a **Send with Taildrop…** entry to Dolphin's right-click menu on KDE
-Plasma 6, so you can send files to your other Tailscale devices with
-[Taildrop](https://tailscale.com/kb/1106/taildrop).
+Adds two entries to Dolphin's right-click **Share** menu on KDE Plasma 6, for
+sending files to your other Tailscale devices:
 
-## How it works
+- **Send with Taildrop…** uses
+  [Taildrop](https://tailscale.com/kb/1106/taildrop). It works with phones,
+  tablets and other desktops, but only between devices owned by the same user,
+  and never with tagged devices.
+- **Send via SSH…** copies files with `scp` over the tailnet. It works with
+  any Linux or macOS device you can log in to with an SSH key, including
+  tagged servers.
+
+## Send with Taildrop…
 
 1. Select one or more files or folders in Dolphin, right-click, then pick
    **Share → Send with Taildrop…**.
@@ -18,14 +25,40 @@ Plasma 6, so you can send files to your other Tailscale devices with
 a temporary `<name>.zip` first, and the temp files are deleted after the send.
 If no device is online, an error dialog is shown.
 
-The flake provides:
+## Send via SSH…
+
+1. Select files or folders, right-click, then pick **Share → Send via SSH…**.
+2. A kdialog menu lists the online Linux and macOS peers from
+   `tailscale status --json`. Tags make no difference here.
+3. The files are copied with `scp -r -p` to `~/Downloads` on the target, using
+   its Tailscale IPv4 address. The folder is created if it's missing. Folders
+   are copied as folders, so nothing is zipped.
+4. A desktop notification reports whether the copy worked.
+
+Requirements and behaviour:
+
+- The target must run an SSH server, and you must be able to log in **with a
+  key and without a prompt**. There is no terminal for a password prompt, so
+  SSH runs with `BatchMode=yes`. Test this with
+  `ssh -o BatchMode=yes <tailscale-ip> true`.
+- The username, keys and other settings come from your `~/.ssh/config`. A
+  `Host 100.81.50.95` block, for example, can set a different `User`.
+- Unknown host keys are accepted on first contact
+  (`StrictHostKeyChecking=accept-new`), because the tailnet already
+  authenticates the peer. Changed host keys are still refused.
+- **Files with the same name in the destination are overwritten.**
+- To use a different destination, set `TAILDROP_SSH_DIR` in your session
+  environment. Relative paths start from the remote home directory.
+
+## Flake outputs
 
 | Output | Contents |
 | --- | --- |
 | `packages.<system>.taildrop-send` | The `taildrop-send` script |
-| `packages.<system>.taildrop-servicemenu` | `share/kio/servicemenus/taildrop.desktop` |
-| `packages.<system>.default` | Both of the above |
-| `overlays.default` | `taildrop-send`, `taildrop-servicemenu`, `taildrop-dolphin` |
+| `packages.<system>.ssh-send` | The `ssh-send` script |
+| `packages.<system>.taildrop-servicemenu` | `share/kio/servicemenus/taildrop.desktop` (both entries) |
+| `packages.<system>.default` | All of the above |
+| `overlays.default` | `taildrop-send`, `ssh-send`, `taildrop-servicemenu`, `taildrop-dolphin` |
 | `nixosModules.default` | `programs.taildrop-dolphin` |
 | `homeManagerModules.default` | `programs.taildrop-dolphin` |
 
@@ -64,7 +97,7 @@ Supported systems: `x86_64-linux` and `aarch64-linux`.
 
 Options:
 
-- `programs.taildrop-dolphin.enable`: installs the script and the servicemenu
+- `programs.taildrop-dolphin.enable`: installs both scripts and the servicemenu
   into `environment.systemPackages`.
 - `programs.taildrop-dolphin.package`: the package to install. Defaults to this
   flake's package, built with your system's `pkgs`.
@@ -97,7 +130,10 @@ system daemon, so you still need one of these:
 
 If you use the overlay, `pkgs.taildrop-dolphin` is the combined package.
 
-## Receiving files
+## Receiving Taildrop files
+
+Files sent with **Send via SSH…** are simply in `~/Downloads` on the target.
+Taildrop works differently:
 
 - **Linux:** received files wait in tailscaled's inbox until you collect them,
   for example with `tailscale file get ~/Downloads`. Use
@@ -105,12 +141,14 @@ If you use the overlay, `pkgs.taildrop-dolphin` is the combined package.
   Without `sudo`, this also needs the operator setting.
 - **macOS, Windows, iOS and Android:** the Tailscale app receives the files and
   shows them to you.
-- Taildrop only sends between devices owned by the same user. Tagged devices
-  and devices shared from other tailnets will not appear as targets.
+- Taildrop only sends between devices owned by the same user. If either the
+  sending or the receiving device is tagged, Taildrop doesn't work, so use
+  **Send via SSH…** for tagged servers. Devices shared from other tailnets
+  also don't appear as targets.
 
 ## Troubleshooting
 
-- **The menu entry doesn't appear.** Restart Dolphin. If it's still missing,
+- **The menu entries don't appear.** Restart Dolphin. If they're still missing,
   run `kbuildsycoca6` and log out and back in, so a new `XDG_DATA_DIRS` is
   picked up. Check that `taildrop.desktop` exists in a
   `share/kio/servicemenus` directory listed in `XDG_DATA_DIRS`. On NixOS that
@@ -120,14 +158,22 @@ If you use the overlay, `pkgs.taildrop-dolphin` is the combined package.
   `sudo tailscale set --operator=$USER`. Then check the result with
   `tailscale file cp --targets`.
 - **"No Taildrop targets are online".** Run `tailscale file cp --targets`
-  yourself. Devices that are offline, or that don't support Taildrop, are not
-  listed.
-- **Testing from a terminal:** run `taildrop-send <file>...` directly to see
-  the same dialogs and notifications.
+  yourself. Devices that are offline, tagged, owned by another user, or don't
+  support Taildrop are not listed. Check `tailscale status`: a peer listed
+  as `tagged-devices`, or this machine having tags, rules Taildrop out.
+- **"Send via SSH failed: … Permission denied".** The target doesn't accept
+  your SSH key. Run `ssh -o BatchMode=yes <tailscale-ip> true` to check, then
+  add your public key to the target's `authorized_keys`. On NixOS, that's
+  `users.users.<name>.openssh.authorizedKeys.keys`.
+- **"Send via SSH failed: … Host key verification failed".** The target's host
+  key changed, for example after a reinstall. Remove the old key with
+  `ssh-keygen -R <tailscale-ip>`.
+- **Testing from a terminal:** run `taildrop-send <file>...` or
+  `ssh-send <file>...` directly to see the same dialogs and notifications.
 
 ## Development
 
 ```sh
-nix flake check   # builds both packages and runs the NixOS VM test
+nix flake check   # builds the packages and runs the NixOS VM test
 nix fmt           # nixfmt (via nixfmt-tree)
 ```

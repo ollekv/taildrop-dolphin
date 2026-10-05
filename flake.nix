@@ -37,6 +37,25 @@
             };
           };
 
+          ssh-send = pkgs.writeShellApplication {
+            name = "ssh-send";
+            runtimeInputs = with pkgs; [
+              tailscale
+              kdePackages.kdialog
+              libnotify
+              jq
+              openssh
+              coreutils
+              gnugrep
+            ];
+            text = builtins.readFile ./src/ssh-send.sh;
+            meta = {
+              description = "Pick a Tailscale device with kdialog and copy files to it with scp";
+              mainProgram = "ssh-send";
+              platforms = lib.platforms.linux;
+            };
+          };
+
           # KIO only runs servicemenus from user-writable locations when the
           # file is executable, so mark it executable to be safe everywhere.
           taildrop-servicemenu = pkgs.writeTextFile {
@@ -47,7 +66,7 @@
               [Desktop Entry]
               Type=Service
               MimeType=all/allfiles;all/all;
-              Actions=taildropSend;
+              Actions=taildropSend;sshSend;
               X-KDE-Submenu=Share
               Icon=document-send
 
@@ -55,15 +74,21 @@
               Name=Send with Taildrop…
               Icon=document-send
               Exec=${lib.getExe taildrop-send} %F
+
+              [Desktop Action sshSend]
+              Name=Send via SSH…
+              Icon=network-server
+              Exec=${lib.getExe ssh-send} %F
             '';
           };
         in
         {
-          inherit taildrop-send taildrop-servicemenu;
+          inherit taildrop-send ssh-send taildrop-servicemenu;
           default = pkgs.symlinkJoin {
             name = "taildrop-dolphin";
             paths = [
               taildrop-send
+              ssh-send
               taildrop-servicemenu
             ];
             meta.mainProgram = "taildrop-send";
@@ -74,7 +99,7 @@
       packages = forAllSystems mkPackages;
 
       overlays.default = final: _prev: {
-        inherit (mkPackages final) taildrop-send taildrop-servicemenu;
+        inherit (mkPackages final) taildrop-send ssh-send taildrop-servicemenu;
         taildrop-dolphin = (mkPackages final).default;
       };
 
@@ -170,7 +195,7 @@
           packages = self.packages.${pkgs.stdenv.hostPlatform.system};
         in
         {
-          inherit (packages) taildrop-send taildrop-servicemenu;
+          inherit (packages) taildrop-send ssh-send taildrop-servicemenu;
 
           nixos-module = pkgs.testers.runNixOSTest {
             name = "taildrop-dolphin";
@@ -187,7 +212,9 @@
               machine.wait_for_unit("multi-user.target")
               machine.succeed("test -f /run/current-system/sw/share/kio/servicemenus/taildrop.desktop")
               machine.succeed("grep -q 'Exec=/nix/store/.*/bin/taildrop-send %F' /run/current-system/sw/share/kio/servicemenus/taildrop.desktop")
+              machine.succeed("grep -q 'Exec=/nix/store/.*/bin/ssh-send %F' /run/current-system/sw/share/kio/servicemenus/taildrop.desktop")
               machine.succeed("su - alice -c 'command -v taildrop-send'")
+              machine.succeed("su - alice -c 'command -v ssh-send'")
               machine.wait_until_succeeds("tailscale debug prefs | grep -q '\"OperatorUser\": \"alice\"'")
             '';
           };
