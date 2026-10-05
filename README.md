@@ -19,11 +19,13 @@ sending files to your other Tailscale devices:
    peers are left out. Peers whose status is unknown are still listed, marked
    `(unknown-status)`.
 3. The files are sent with `tailscale file cp <files...> <ip>:`.
-4. A desktop notification reports whether the send worked.
+4. A "Sending…" notification appears, and it is replaced by the result when
+   the send finishes.
 
-`tailscale file cp` cannot send directories. Any selected folder is zipped to
-a temporary `<name>.zip` first, and the temp files are deleted after the send.
-If no device is online, an error dialog is shown.
+`tailscale file cp` cannot send directories, so each selected folder is
+zipped and streamed as `<name>.zip` while it is being sent. No temporary copy
+is written to disk. Symlinks inside the folder are followed. If no device is
+online, an error dialog is shown.
 
 ## Send via SSH…
 
@@ -32,8 +34,11 @@ If no device is online, an error dialog is shown.
    `tailscale status --json`. Tags make no difference here.
 3. The files are copied with `scp -r -p` to `~/Downloads` on the target, using
    its Tailscale IPv4 address. The folder is created if it's missing. Folders
-   are copied as folders, so nothing is zipped.
-4. A desktop notification reports whether the copy worked.
+   are copied as folders, so nothing is zipped. Creating the folder and
+   copying share one SSH connection, so you log in only once.
+4. A "Sending…" notification appears, and it is replaced by the result when
+   the copy finishes. If the target stops responding for about 45 seconds,
+   the copy is aborted and reported as failed.
 
 Requirements and behaviour:
 
@@ -177,3 +182,7 @@ Taildrop works differently:
 nix flake check   # builds the packages and runs the NixOS VM test
 nix fmt           # nixfmt (via nixfmt-tree)
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).

@@ -18,8 +18,27 @@
       mkPackages =
         pkgs:
         let
-          taildrop-send = pkgs.writeShellApplication {
+          # Each script gets the shared helpers from common.sh in front of it.
+          mkScript =
+            {
+              name,
+              description,
+              runtimeInputs,
+            }:
+            pkgs.writeShellApplication {
+              inherit name runtimeInputs;
+              text = builtins.readFile ./src/common.sh + builtins.readFile ./src/${name}.sh;
+              meta = {
+                inherit description;
+                license = lib.licenses.mit;
+                mainProgram = name;
+                platforms = lib.platforms.linux;
+              };
+            };
+
+          taildrop-send = mkScript {
             name = "taildrop-send";
+            description = "Pick a Tailscale device with kdialog and send files to it via Taildrop";
             runtimeInputs = with pkgs; [
               tailscale
               kdePackages.kdialog
@@ -29,16 +48,11 @@
               coreutils
               gnugrep
             ];
-            text = builtins.readFile ./src/taildrop-send.sh;
-            meta = {
-              description = "Pick a Tailscale device with kdialog and send files to it via Taildrop";
-              mainProgram = "taildrop-send";
-              platforms = lib.platforms.linux;
-            };
           };
 
-          ssh-send = pkgs.writeShellApplication {
+          ssh-send = mkScript {
             name = "ssh-send";
+            description = "Pick a Tailscale device with kdialog and copy files to it with scp";
             runtimeInputs = with pkgs; [
               tailscale
               kdePackages.kdialog
@@ -48,12 +62,6 @@
               coreutils
               gnugrep
             ];
-            text = builtins.readFile ./src/ssh-send.sh;
-            meta = {
-              description = "Pick a Tailscale device with kdialog and copy files to it with scp";
-              mainProgram = "ssh-send";
-              platforms = lib.platforms.linux;
-            };
           };
 
           # KIO only runs servicemenus from user-writable locations when the
@@ -94,14 +102,31 @@
             meta.mainProgram = "taildrop-send";
           };
         };
+
+      # Options shared by the NixOS and Home Manager modules.
+      commonOptions = pkgs: {
+        enable = lib.mkEnableOption "the Taildrop and SSH entries in Dolphin's Share menu";
+
+        package = lib.mkOption {
+          type = lib.types.package;
+          default = (mkPackages pkgs).default;
+          defaultText = lib.literalExpression "taildrop-dolphin.packages.\${system}.default";
+          description = "The taildrop-dolphin package to install.";
+        };
+      };
     in
     {
       packages = forAllSystems mkPackages;
 
-      overlays.default = final: _prev: {
-        inherit (mkPackages final) taildrop-send ssh-send taildrop-servicemenu;
-        taildrop-dolphin = (mkPackages final).default;
-      };
+      overlays.default =
+        final: _prev:
+        let
+          packages = mkPackages final;
+        in
+        {
+          inherit (packages) taildrop-send ssh-send taildrop-servicemenu;
+          taildrop-dolphin = packages.default;
+        };
 
       nixosModules.default =
         {
@@ -114,16 +139,7 @@
           cfg = config.programs.taildrop-dolphin;
         in
         {
-          options.programs.taildrop-dolphin = {
-            enable = lib.mkEnableOption "the \"Send with Taildrop…\" entry in Dolphin's context menu";
-
-            package = lib.mkOption {
-              type = lib.types.package;
-              default = (mkPackages pkgs).default;
-              defaultText = lib.literalExpression "taildrop-dolphin.packages.\${system}.default";
-              description = "The taildrop-dolphin package to install.";
-            };
-
+          options.programs.taildrop-dolphin = commonOptions pkgs // {
             operator = lib.mkOption {
               type = lib.types.nullOr lib.types.str;
               default = null;
@@ -169,16 +185,7 @@
           cfg = config.programs.taildrop-dolphin;
         in
         {
-          options.programs.taildrop-dolphin = {
-            enable = lib.mkEnableOption "the \"Send with Taildrop…\" entry in Dolphin's context menu";
-
-            package = lib.mkOption {
-              type = lib.types.package;
-              default = (mkPackages pkgs).default;
-              defaultText = lib.literalExpression "taildrop-dolphin.packages.\${system}.default";
-              description = "The taildrop-dolphin package to install.";
-            };
-          };
+          options.programs.taildrop-dolphin = commonOptions pkgs;
 
           config = lib.mkIf cfg.enable {
             home.packages = [ cfg.package ];

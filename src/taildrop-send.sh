@@ -3,11 +3,7 @@
 # servicemenu with the selected paths as arguments (%F).
 
 title="Send with Taildrop"
-
-fail() {
-  kdialog --title "$title" --error "$1"
-  exit 1
-}
+icon=document-send
 
 if [ "$#" -eq 0 ]; then
   fail "No files were selected."
@@ -26,71 +22,55 @@ If this is a permission error, set your user as the Tailscale operator
 (programs.taildrop-dolphin.operator, or: sudo tailscale set --operator=\$USER)."
 fi
 
-# kdialog --menu takes <tag> <label> pairs; tag is the IP, label the name.
-mapfile -t menu < <(
+# Unknown-status peers stay in the menu, with the status in the label.
+read_peers < <(
   printf '%s\n' "$targets" | awk -F '\t' '
     NF >= 2 && $3 !~ /^offline/ {
       print $1
+      print $2
       print ($3 == "" ? $2 : $2 " (" $3 ")")
     }'
 )
 
-if [ "${#menu[@]}" -eq 0 ]; then
-  fail "No Taildrop targets are online."
-fi
+what=$(describe_selection "$@")
+pick_target "No Taildrop targets are online." "Send $what to:"
+notify_progress "Sending $what to $target_name…"
 
-if [ "$#" -eq 1 ]; then
-  prompt="Send \"$(basename -- "$1")\" to:"
-else
-  prompt="Send $# items to:"
-fi
+# Progress output would only end up in the captured error messages.
+cp_opts=(--update-interval=0)
 
-target=$(kdialog --title "$title" --menu "$prompt" "${menu[@]}") || exit 0
-
-target_name=$target
-for ((i = 0; i < ${#menu[@]}; i += 2)); do
-  if [ "${menu[i]}" = "$target" ]; then
-    target_name=${menu[i + 1]% (*}
-    break
-  fi
-done
-
-tmpdir=$(mktemp -d -t taildrop-send.XXXXXX)
-trap 'rm -rf -- "$tmpdir"' EXIT
-
-# tailscale file cp cannot send directories, so zip them first. Each archive
-# gets its own subdirectory so identically named folders don't collide.
+# tailscale file cp cannot send directories, so each one is streamed as a
+# zip archive, without a temporary copy. -1 favours speed over size. (Zip
+# can't store symlinks as links (-y) when writing to a pipe, so they are
+# followed.)
 files=()
-n=0
 for path in "$@"; do
   if [ -d "$path" ]; then
     path=$(realpath -- "$path")
-    name=$(basename -- "$path")
-    [ "$path" = / ] && name=root
-    n=$((n + 1))
-    mkdir -p -- "$tmpdir/$n"
-    archive="$tmpdir/$n/$name.zip"
-    if ! out=$(cd -- "$(dirname -- "$path")" && zip -qr "$archive" -- "$name" 2>&1); then
-      notify-send -a Taildrop -i dialog-error -u critical \
-        "Taildrop failed" "Could not zip \"$name\": $out"
-      exit 1
+    parent=$(dirname -- "$path")
+    entry=$(basename -- "$path")
+    name=$entry
+    if [ "$path" = / ]; then
+      entry=.
+      name=root
     fi
-    files+=("$archive")
+    if ! out=$(
+      {
+        cd -- "$parent" &&
+          zip -qr -1 - -- "$entry" |
+          tailscale file cp "${cp_opts[@]}" --name "$name.zip" - "$target:"
+      } 2>&1
+    ); then
+      send_failed "$out"
+    fi
   else
     files+=("$path")
   fi
 done
 
-if out=$(tailscale file cp "${files[@]}" "$target:" 2>&1); then
-  if [ "$#" -eq 1 ]; then
-    what="\"$(basename -- "$1")\""
-  else
-    what="$# items"
-  fi
-  notify-send -a Taildrop -i document-send \
-    "Taildrop" "Sent $what to $target_name"
-else
-  notify-send -a Taildrop -i dialog-error -u critical \
-    "Taildrop failed" "Could not send to $target_name: $(printf '%s\n' "$out" | tr '\r' '\n' | grep -v '^\s*$' | tail -n 3)"
-  exit 1
+if [ "${#files[@]}" -gt 0 ] &&
+  ! out=$(tailscale file cp "${cp_opts[@]}" "${files[@]}" "$target:" 2>&1); then
+  send_failed "$out"
 fi
+
+notify_sent "Sent $what to $target_name"
